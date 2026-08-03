@@ -266,6 +266,151 @@
             autoFillKurs();
             renderApp();
         };
+    <script>
+        // MASUKKAN URL GOOGLE APPS SCRIPT KAMU DI BAWAH INI:
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxI-eTyMFFSdfwusln_5UkJVrxKjAIia3qhbKQzd4naNFfbbrfjbL9QsbYJFWebwCTZ/exec';
+        
+        const defaultKurs = { 'JPY': 106, 'SGD': 11800, 'USD': 15500, 'IDR': 1 };
+        let orders = JSON.parse(localStorage.getItem('jastipOrders')) || [];
+
+        const formatIDR = (number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number);
+
+        function autoFillKurs() {
+            const currency = document.getElementById('inputCurrency').value;
+            const kursInput = document.getElementById('inputKurs');
+            kursInput.value = defaultKurs[currency];
+            kursInput.readOnly = currency === 'IDR';
+            calcPreview();
+        }
+
+        function calcPreview() {
+            const priceForeign = parseFloat(document.getElementById('inputPriceForeign').value) || 0;
+            const kurs = parseFloat(document.getElementById('inputKurs').value) || 0;
+            const priceSell = parseFloat(document.getElementById('inputPriceSell').value) || 0;
+            
+            const modalIDR = priceForeign * kurs;
+            const profitIDR = priceSell - modalIDR;
+
+            document.getElementById('prevModal').innerText = formatIDR(modalIDR);
+            document.getElementById('prevProfit').innerText = formatIDR(profitIDR);
+        }
+
+        document.getElementById('jastipForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const btnSubmit = document.querySelector('.btn-submit');
+            btnSubmit.innerText = "⏳ Mengirim data ke Cloud...";
+            btnSubmit.disabled = true;
+            btnSubmit.style.background = "#95a5a6";
+            
+            const trip = document.getElementById('inputTrip').value;
+            const name = document.getElementById('inputName').value;
+            const item = document.getElementById('inputItem').value;
+            const currency = document.getElementById('inputCurrency').value;
+            const priceForeign = parseFloat(document.getElementById('inputPriceForeign').value);
+            const kurs = parseFloat(document.getElementById('inputKurs').value);
+            const priceSell = parseFloat(document.getElementById('inputPriceSell').value);
+
+            const modalIDR = priceForeign * kurs;
+            const margin = priceSell - modalIDR;
+
+            const newOrder = {
+                id: Date.now(),
+                trip, name, item, currency, priceForeign, kurs, modalIDR, priceSell, margin,
+                status: 'Belum Dibelikan'
+            };
+
+            // Mengirim data ke Google Sheets
+            fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify(newOrder),
+                headers: { "Content-Type": "text/plain;charset=utf-8" }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.result === "success") {
+                    // Jika sukses masuk ke Excel, simpan juga di HP/Laptop
+                    orders.push(newOrder);
+                    saveData();
+                    this.reset();
+                    autoFillKurs();
+                    document.getElementById('prevModal').innerText = "Rp 0";
+                    document.getElementById('prevProfit').innerText = "Rp 0";
+                    renderApp();
+                    
+                    // Kembalikan tombol seperti semula
+                    btnSubmit.innerText = "➕ Tambahkan ke Tracker";
+                    btnSubmit.disabled = false;
+                    btnSubmit.style.background = "#0074e4";
+                }
+            })
+            .catch(error => {
+                alert("Gagal mengirim ke server. Pastikan internet menyala.");
+                btnSubmit.innerText = "➕ Tambahkan ke Tracker";
+                btnSubmit.disabled = false;
+                btnSubmit.style.background = "#0074e4";
+            });
+        });
+
+        function deleteOrder(id) {
+            if(confirm("Yakin ingin menghapus pesanan ini?")) {
+                orders = orders.filter(order => order.id !== id);
+                saveData();
+                renderApp();
+            }
+        }
+
+        function toggleStatus(id) {
+            let order = orders.find(o => o.id === id);
+            if(order.status === 'Belum Dibelikan') order.status = 'Sudah Dibelikan ✅';
+            else order.status = 'Belum Dibelikan';
+            saveData();
+            renderApp();
+        }
+
+        function saveData() {
+            localStorage.setItem('jastipOrders', JSON.stringify(orders));
+        }
+
+        function renderApp() {
+            const filter = document.getElementById('filterTrip').value;
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            let totalModal = 0, totalOmzet = 0, totalProfit = 0;
+
+            orders.forEach(order => {
+                if (filter !== 'ALL' && order.trip !== filter) return; 
+
+                totalModal += order.modalIDR;
+                totalOmzet += order.priceSell;
+                totalProfit += order.margin;
+
+                const statusClass = order.status === 'Belum Dibelikan' ? 'status-pending' : 'status-done';
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong>${order.name}</strong><br><small style="color:#7f8c8d;">${order.trip}</small></td>
+                        <td>${order.item}</td>
+                        <td>${order.priceForeign} ${order.currency} <br><small>Kurs: ${order.kurs}</small></td>
+                        <td>${formatIDR(order.modalIDR)}</td>
+                        <td><strong>${formatIDR(order.priceSell)}</strong></td>
+                        <td style="color:#00b06f; font-weight:bold;">${formatIDR(order.margin)}</td>
+                        <td><button class="status-btn ${statusClass}" onclick="toggleStatus(${order.id})">${order.status}</button></td>
+                        <td><button class="btn-delete" onclick="deleteOrder(${order.id})">✖</button></td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('dashModal').innerText = formatIDR(totalModal);
+            document.getElementById('dashOmzet').innerText = formatIDR(totalOmzet);
+            document.getElementById('dashProfit').innerText = formatIDR(totalProfit);
+        }
+
+        window.onload = () => {
+            autoFillKurs();
+            renderApp();
+        };
     </script>
 </body>
 </html>
